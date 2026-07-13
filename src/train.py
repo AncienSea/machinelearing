@@ -10,7 +10,6 @@ from pathlib import Path
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -18,6 +17,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from src.data import aggregate_daily, make_supervised
 from src.models import MODEL_BUILDERS
+from src.report_artifacts import save_metrics_table, save_prediction_chart
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -114,69 +114,16 @@ def summarize_metrics(metrics: pd.DataFrame) -> pd.DataFrame:
 def plot_predictions(predictions: pd.DataFrame, figure_dir: Path) -> None:
     figure_dir.mkdir(parents=True, exist_ok=True)
     for horizon in sorted(predictions["horizon"].unique()):
-        subset = predictions[predictions["horizon"] == horizon].copy()
-        subset["date"] = pd.to_datetime(subset["date"])
-        fig, ax = plt.subplots(figsize=(10, 4.6), dpi=160)
-        truth = subset.drop_duplicates("date").sort_values("date")
-        ax.plot(
-            truth["date"],
-            truth["ground_truth"],
-            color="black",
-            linewidth=2.0,
-            label="Ground Truth",
+        save_prediction_chart(
+            predictions,
+            horizon,
+            figure_dir / f"prediction_{horizon}d.png",
         )
-        for model_name, model_df in subset.groupby("model"):
-            model_df = model_df.sort_values("date")
-            ax.plot(
-                model_df["date"],
-                model_df["prediction_mean"],
-                linewidth=1.5,
-                label=model_name,
-            )
-        ax.set_title(f"Power Forecast vs Ground Truth ({horizon} days)")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Daily global active power")
-        ax.grid(True, alpha=0.25)
-        ax.legend(ncol=2, fontsize=8)
-        fig.autofmt_xdate()
-        fig.tight_layout()
-        fig.savefig(figure_dir / f"prediction_{horizon}d.png", bbox_inches="tight")
-        plt.close(fig)
 
 
 def plot_metrics_table(summary: pd.DataFrame, figure_dir: Path) -> None:
     figure_dir.mkdir(parents=True, exist_ok=True)
-    table = summary.copy()
-    table["MSE mean±std"] = table.apply(
-        lambda r: f"{r['mse_mean']:.2f} ± {r['mse_std']:.2f}", axis=1
-    )
-    table["MAE mean±std"] = table.apply(
-        lambda r: f"{r['mae_mean']:.2f} ± {r['mae_std']:.2f}", axis=1
-    )
-    table = table[["horizon", "model", "MSE mean±std", "MAE mean±std"]]
-
-    fig_height = 0.65 + 0.42 * len(table)
-    fig, ax = plt.subplots(figsize=(9.2, fig_height), dpi=180)
-    ax.axis("off")
-    mpl_table = ax.table(
-        cellText=table.values,
-        colLabels=["Horizon", "Model", "MSE mean±std", "MAE mean±std"],
-        loc="center",
-        cellLoc="center",
-    )
-    mpl_table.auto_set_font_size(False)
-    mpl_table.set_fontsize(8.5)
-    mpl_table.scale(1.0, 1.35)
-    for (row, col), cell in mpl_table.get_celld().items():
-        cell.set_edgecolor("#4a4a4a")
-        if row == 0:
-            cell.set_facecolor("#e9eef6")
-            cell.set_text_props(weight="bold")
-        elif row % 2 == 0:
-            cell.set_facecolor("#f6f8fb")
-    fig.tight_layout()
-    fig.savefig(figure_dir / "metrics_table.png", bbox_inches="tight")
-    plt.close(fig)
+    save_metrics_table(summary, figure_dir / "metrics_table.png")
 
 
 def main() -> None:

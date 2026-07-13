@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
+import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -22,10 +25,28 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.report_artifacts import (
+    save_architecture_diagram,
+    save_error_distribution_boxplot,
+    save_mae_comparison_chart,
+    save_metrics_table,
+    save_seed_robustness_boxplot,
+    save_timeline,
+)
+
+
 AUTHOR_NAME = "马鑫"
 STUDENT_ID = "20255227058"
+MODEL_ORDER = ["LSTM", "Transformer", "CNN-Transformer"]
+MODEL_COLORS = {
+    "LSTM": "#4C78A8",
+    "Transformer": "#F58518",
+    "CNN-Transformer": "#54A24B",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,8 +75,8 @@ def parse_args() -> argparse.Namespace:
 
 def register_chinese_font() -> str:
     candidates = [
-        Path(r"C:\Windows\Fonts\simhei.ttf"),
         Path(r"C:\Windows\Fonts\msyh.ttc"),
+        Path(r"C:\Windows\Fonts\simhei.ttf"),
         Path(r"C:\Windows\Fonts\simsun.ttc"),
     ]
     for font_path in candidates:
@@ -72,8 +93,8 @@ def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
             "ChineseTitle",
             parent=base["Title"],
             fontName=font_name,
-            fontSize=20,
-            leading=28,
+            fontSize=21,
+            leading=29,
             alignment=TA_CENTER,
             spaceAfter=10,
             wordWrap="CJK",
@@ -85,28 +106,40 @@ def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
             fontSize=10,
             leading=15,
             alignment=TA_CENTER,
-            textColor=colors.HexColor("#3a3a3a"),
-            spaceAfter=18,
+            textColor=colors.HexColor("#333333"),
+            spaceAfter=16,
             wordWrap="CJK",
         ),
         "heading": ParagraphStyle(
             "ChineseHeading",
             parent=base["Heading1"],
             fontName=font_name,
-            fontSize=15,
-            leading=21,
+            fontSize=15.5,
+            leading=22,
+            textColor=colors.HexColor("#17324d"),
             spaceBefore=10,
             spaceAfter=8,
+            wordWrap="CJK",
+        ),
+        "subheading": ParagraphStyle(
+            "ChineseSubheading",
+            parent=base["Heading2"],
+            fontName=font_name,
+            fontSize=12.2,
+            leading=17,
+            textColor=colors.HexColor("#244766"),
+            spaceBefore=8,
+            spaceAfter=5,
             wordWrap="CJK",
         ),
         "body": ParagraphStyle(
             "ChineseBody",
             parent=base["BodyText"],
             fontName=font_name,
-            fontSize=10.2,
-            leading=16,
+            fontSize=10,
+            leading=15.5,
             alignment=TA_LEFT,
-            spaceAfter=7,
+            spaceAfter=6,
             firstLineIndent=18,
             wordWrap="CJK",
         ),
@@ -114,32 +147,41 @@ def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
             "ChineseBodyNoIndent",
             parent=base["BodyText"],
             fontName=font_name,
-            fontSize=10.2,
-            leading=16,
+            fontSize=10,
+            leading=15.5,
             alignment=TA_LEFT,
-            spaceAfter=7,
+            spaceAfter=6,
+            wordWrap="CJK",
+        ),
+        "small": ParagraphStyle(
+            "ChineseSmall",
+            parent=base["BodyText"],
+            fontName=font_name,
+            fontSize=8.7,
+            leading=12,
+            alignment=TA_LEFT,
             wordWrap="CJK",
         ),
         "caption": ParagraphStyle(
             "ChineseCaption",
             parent=base["BodyText"],
             fontName=font_name,
-            fontSize=9,
-            leading=13,
+            fontSize=8.8,
+            leading=12.5,
             alignment=TA_CENTER,
             textColor=colors.HexColor("#4a4a4a"),
-            spaceAfter=10,
+            spaceAfter=9,
             wordWrap="CJK",
         ),
         "code": ParagraphStyle(
             "CodeBlock",
             parent=base["Code"],
             fontName="Courier",
-            fontSize=8.5,
-            leading=11,
+            fontSize=8.2,
+            leading=10.8,
             leftIndent=12,
             rightIndent=12,
-            backColor=colors.HexColor("#f4f6f8"),
+            backColor=colors.HexColor("#f3f6f8"),
             borderPadding=6,
             spaceBefore=3,
             spaceAfter=8,
@@ -165,47 +207,295 @@ def page_number(canvas, doc):
     canvas.restoreState()
 
 
-def format_best(summary: pd.DataFrame, horizon: int) -> str:
-    row = summary[summary["horizon"] == horizon].sort_values("mae_mean").iloc[0]
-    return (
-        f"{row['model']}（MAE={row['mae_mean']:.2f}±{row['mae_std']:.2f}，"
-        f"MSE={row['mse_mean']:.2f}±{row['mse_std']:.2f}）"
-    )
+def format_pm(mean: float, std: float) -> str:
+    return f"{mean:.2f} ± {std:.2f}"
 
 
-def make_small_table(rows: list[list[str]], font_name: str) -> Table:
-    table = Table(rows, hAlign="CENTER", colWidths=[3.2 * cm, 11.6 * cm])
-    table.setStyle(
-        TableStyle(
+def best_row(summary: pd.DataFrame, horizon: int) -> pd.Series:
+    return summary[summary["horizon"] == horizon].sort_values("mae_mean").iloc[0]
+
+
+def improvement_text(summary: pd.DataFrame, horizon: int) -> str:
+    subset = summary[summary["horizon"] == horizon].copy()
+    best = subset.sort_values("mae_mean").iloc[0]
+    worst = subset.sort_values("mae_mean").iloc[-1]
+    gain = (worst["mae_mean"] - best["mae_mean"]) / worst["mae_mean"] * 100
+    return f"{best['model']} 的 MAE 最低，比该任务中 MAE 最高的 {worst['model']} 降低 {gain:.2f}%"
+
+
+def make_table(
+    rows: list[list[str | Paragraph]],
+    font_name: str,
+    col_widths: list[float],
+    header: bool = False,
+    left_header: bool = False,
+) -> Table:
+    table = Table(rows, hAlign="CENTER", colWidths=col_widths, repeatRows=1 if header else 0)
+    style_commands = [
+        ("FONTNAME", (0, 0), (-1, -1), font_name),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.8),
+        ("LEADING", (0, 0), (-1, -1), 12.2),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#777777")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    if header:
+        style_commands.extend(
             [
-                ("FONTNAME", (0, 0), (-1, -1), font_name),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("LEADING", (0, 0), (-1, -1), 13),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#777777")),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e9eef6")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e5edf6")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#17324d")),
             ]
         )
-    )
+    if left_header:
+        style_commands.append(("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e9eef6")))
+    table.setStyle(TableStyle(style_commands))
     return table
+
+
+def setup_matplotlib() -> None:
+    plt.rcParams["font.sans-serif"] = [
+        "Microsoft YaHei",
+        "SimHei",
+        "Arial Unicode MS",
+        "DejaVu Sans",
+    ]
+    plt.rcParams["axes.unicode_minus"] = False
+
+
+def create_metrics_table(summary: pd.DataFrame, figure_dir: Path) -> Path:
+    rows = []
+    for _, row in summary.sort_values(["horizon", "model"]).iterrows():
+        rows.append(
+            [
+                int(row["horizon"]),
+                row["model"],
+                format_pm(row["mse_mean"], row["mse_std"]),
+                format_pm(row["mae_mean"], row["mae_std"]),
+                f"{row['train_seconds_mean']:.2f}",
+            ]
+        )
+    fig_height = 0.65 + 0.42 * len(rows)
+    fig, ax = plt.subplots(figsize=(9.8, fig_height), dpi=190)
+    ax.axis("off")
+    table = ax.table(
+        cellText=rows,
+        colLabels=["Horizon", "Model", "MSE mean ± std", "MAE mean ± std", "Train s"],
+        loc="center",
+        cellLoc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(8.5)
+    table.scale(1.0, 1.35)
+    for (row, col), cell in table.get_celld().items():
+        cell.set_edgecolor("#465a69")
+        if row == 0:
+            cell.set_facecolor("#dfeaf3")
+            cell.set_text_props(weight="bold", color="#17324d")
+        elif row % 2 == 0:
+            cell.set_facecolor("#f5f7fa")
+    fig.tight_layout()
+    out = figure_dir / "report_metrics_table.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+def create_mae_bar(summary: pd.DataFrame, figure_dir: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(8.8, 4.8), dpi=180)
+    horizons = sorted(summary["horizon"].unique())
+    x = np.arange(len(horizons))
+    width = 0.23
+    for idx, model in enumerate(MODEL_ORDER):
+        subset = summary[summary["model"] == model].sort_values("horizon")
+        offset = (idx - 1) * width
+        ax.bar(
+            x + offset,
+            subset["mae_mean"],
+            width,
+            yerr=subset["mae_std"],
+            capsize=4,
+            label=model,
+            color=MODEL_COLORS[model],
+            alpha=0.9,
+        )
+    ax.set_xticks(x, [f"{h} days" for h in horizons])
+    ax.set_ylabel("MAE (lower is better)")
+    ax.set_xlabel("Forecast horizon")
+    ax.set_title("Cross-model MAE comparison with 5-seed standard deviation")
+    ax.grid(axis="y", alpha=0.25)
+    ax.legend(ncol=3, fontsize=8, frameon=False)
+    fig.tight_layout()
+    out = figure_dir / "report_mae_comparison.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+def create_seed_boxplot(raw: pd.DataFrame, figure_dir: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(9.0, 4.9), dpi=180)
+    labels = []
+    data = []
+    colors_for_boxes = []
+    for horizon in sorted(raw["horizon"].unique()):
+        for model in MODEL_ORDER:
+            subset = raw[(raw["horizon"] == horizon) & (raw["model"] == model)]
+            labels.append(f"{horizon}d\n{model}")
+            data.append(subset["mae"].to_numpy())
+            colors_for_boxes.append(MODEL_COLORS[model])
+    bp = ax.boxplot(data, patch_artist=True, showmeans=True)
+    for patch, color in zip(bp["boxes"], colors_for_boxes):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.65)
+    ax.set_ylabel("MAE by random seed")
+    ax.set_title("Robustness analysis across five random seeds")
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_xticklabels(labels, fontsize=7.5)
+    fig.tight_layout()
+    out = figure_dir / "report_seed_robustness.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+def create_error_boxplot(predictions: pd.DataFrame, figure_dir: Path) -> Path:
+    frame = predictions.copy()
+    frame["abs_error"] = (frame["prediction_mean"] - frame["ground_truth"]).abs()
+    fig, ax = plt.subplots(figsize=(9.0, 4.9), dpi=180)
+    labels = []
+    data = []
+    colors_for_boxes = []
+    for horizon in sorted(frame["horizon"].unique()):
+        for model in MODEL_ORDER:
+            subset = frame[(frame["horizon"] == horizon) & (frame["model"] == model)]
+            labels.append(f"{horizon}d\n{model}")
+            data.append(subset["abs_error"].to_numpy())
+            colors_for_boxes.append(MODEL_COLORS[model])
+    bp = ax.boxplot(data, patch_artist=True, showfliers=False)
+    for patch, color in zip(bp["boxes"], colors_for_boxes):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.65)
+    ax.set_ylabel("Absolute error of mean prediction")
+    ax.set_title("Daily error distribution on the chronological test period")
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_xticklabels(labels, fontsize=7.5)
+    fig.tight_layout()
+    out = figure_dir / "report_error_distribution.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+def create_timeline(metadata: dict, predictions: pd.DataFrame, figure_dir: Path) -> Path:
+    start = pd.to_datetime(metadata["date_start"])
+    end = pd.to_datetime(metadata["date_end"])
+    test_start = pd.to_datetime(predictions["date"].min())
+    fig, ax = plt.subplots(figsize=(9.2, 2.6), dpi=180)
+    ax.set_ylim(0, 1)
+    ax.set_xlim(start, end)
+    ax.axvspan(start, test_start, ymin=0.34, ymax=0.66, color="#4C78A8", alpha=0.75)
+    ax.axvspan(test_start, end, ymin=0.34, ymax=0.66, color="#F58518", alpha=0.78)
+    ax.text(start, 0.72, "Training + validation period", fontsize=9, color="#17324d")
+    ax.text(test_start, 0.72, "Chronological test period", fontsize=9, color="#17324d")
+    ax.text(start, 0.23, start.strftime("%Y-%m-%d"), fontsize=8)
+    ax.text(test_start, 0.23, test_start.strftime("%Y-%m-%d"), fontsize=8, ha="center")
+    ax.text(end, 0.23, end.strftime("%Y-%m-%d"), fontsize=8, ha="right")
+    ax.set_yticks([])
+    ax.set_title("Time-aware split protocol: the last 365 days are reserved for testing")
+    ax.spines[["left", "right", "top"]].set_visible(False)
+    ax.grid(axis="x", alpha=0.2)
+    fig.tight_layout()
+    out = figure_dir / "report_data_timeline.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+def create_architecture_diagram(figure_dir: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(9.4, 3.5), dpi=180)
+    ax.axis("off")
+    boxes = [
+        ("90-day\nmultivariate input", 0.04),
+        ("Causal Conv1D\nlocal pattern extractor", 0.23),
+        ("Position embedding\n+ Transformer encoder", 0.45),
+        ("Average + max pooling\nwith gating", 0.68),
+        ("Dense forecast head\n90/365-day output", 0.86),
+    ]
+    for text, x in boxes:
+        rect = plt.Rectangle(
+            (x, 0.34),
+            0.14,
+            0.34,
+            linewidth=1.3,
+            edgecolor="#17324d",
+            facecolor="#e8f1f6",
+            transform=ax.transAxes,
+        )
+        ax.add_patch(rect)
+        ax.text(x + 0.07, 0.51, text, ha="center", va="center", fontsize=8.5, transform=ax.transAxes)
+    for i in range(len(boxes) - 1):
+        x0 = boxes[i][1] + 0.145
+        x1 = boxes[i + 1][1] - 0.01
+        ax.annotate(
+            "",
+            xy=(x1, 0.51),
+            xytext=(x0, 0.51),
+            xycoords=ax.transAxes,
+            arrowprops=dict(arrowstyle="->", color="#17324d", lw=1.4),
+        )
+    ax.text(
+        0.5,
+        0.18,
+        "Design idea: combine short-term convolutional motifs with long-range attention for direct multi-step forecasting.",
+        ha="center",
+        fontsize=9,
+        color="#333333",
+        transform=ax.transAxes,
+    )
+    fig.tight_layout()
+    out = figure_dir / "report_architecture.png"
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+    return out
+
+
+def create_report_figures(
+    summary: pd.DataFrame, raw: pd.DataFrame, predictions: pd.DataFrame, metadata: dict, figure_dir: Path
+) -> dict[str, Path]:
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "metrics_table": save_metrics_table(summary, figure_dir / "report_metrics_table.png"),
+        "mae_bar": save_mae_comparison_chart(summary, figure_dir / "report_mae_comparison.png"),
+        "seed_boxplot": save_seed_robustness_boxplot(raw, figure_dir / "report_seed_robustness.png"),
+        "error_boxplot": save_error_distribution_boxplot(predictions, figure_dir / "report_error_distribution.png"),
+        "timeline": save_timeline(metadata, predictions, figure_dir / "report_data_timeline.png"),
+        "architecture": save_architecture_diagram(figure_dir / "report_architecture.png"),
+    }
 
 
 def build_report(args: argparse.Namespace) -> None:
     metrics_dir = args.artifact_dir / "metrics"
     figure_dir = args.artifact_dir / "figures"
     summary_path = metrics_dir / "metrics_summary.csv"
+    raw_path = metrics_dir / "metrics_raw.csv"
+    prediction_path = metrics_dir / "predictions.csv"
     metadata_path = metrics_dir / "metadata.json"
-    if not summary_path.exists():
-        raise FileNotFoundError(f"Missing metrics summary: {summary_path}")
-    if not (figure_dir / "metrics_table.png").exists():
-        raise FileNotFoundError("Missing figures. Run python -m src.train first.")
+    required = [summary_path, raw_path, prediction_path, metadata_path]
+    for path in required:
+        if not path.exists():
+            raise FileNotFoundError(f"Missing experiment artifact: {path}")
+    for name in ["prediction_90d.png", "prediction_365d.png"]:
+        if not (figure_dir / name).exists():
+            raise FileNotFoundError(f"Missing figure: {figure_dir / name}")
 
     summary = pd.read_csv(summary_path)
-    metadata_text = metadata_path.read_text(encoding="utf-8") if metadata_path.exists() else "{}"
+    raw = pd.read_csv(raw_path)
+    predictions = pd.read_csv(prediction_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    generated = create_report_figures(summary, raw, predictions, metadata, figure_dir)
+
     font_name = register_chinese_font()
     styles = make_styles(font_name)
     args.output_pdf.parent.mkdir(parents=True, exist_ok=True)
@@ -213,161 +503,352 @@ def build_report(args: argparse.Namespace) -> None:
     doc = SimpleDocTemplate(
         str(args.output_pdf),
         pagesize=A4,
-        leftMargin=1.65 * cm,
-        rightMargin=1.65 * cm,
-        topMargin=1.45 * cm,
-        bottomMargin=1.35 * cm,
+        leftMargin=1.55 * cm,
+        rightMargin=1.55 * cm,
+        topMargin=1.40 * cm,
+        bottomMargin=1.30 * cm,
         title="Household Power Forecasting Report",
         author=f"{STUDENT_ID}-{AUTHOR_NAME}",
     )
+
     story = []
-    story.append(p("家庭电力消耗多变量时间序列预测", styles, "title"))
+    story.append(p("家庭电力消耗多变量时间序列预测实验报告", styles, "title"))
     story.append(
         p(
+            f"姓名：{AUTHOR_NAME}　学号：{STUDENT_ID}　完成方式：单人完成<br/>"
             f"代码仓库：{args.github_url}<br/>"
-            f"作者信息：{AUTHOR_NAME}（学号：{STUDENT_ID}）。完成方式：单人完成。"
-            "贡献包括数据处理、模型实现、实验运行、结果分析与报告撰写。",
+            "任务类型：基于历史用电序列的 90 天与 365 天直接多步预测",
             styles,
             "subtitle",
         )
     )
 
+    story.append(p("摘要", styles, "subheading"))
+    story.append(
+        p(
+            "本报告围绕家庭用电负荷预测问题，构建了从原始数据下载、分钟级记录清洗、日尺度特征聚合、监督样本构造、深度模型训练到结果可视化的完整实验流程。"
+            "在未提供独立训练集与测试集文件的情况下，实验采用时间序列任务中更严格的按时间划分策略，将最后 365 天作为测试区间，前序数据用于训练与验证，避免未来信息泄漏。"
+            "模型层面比较了 LSTM、Transformer 与本文实现的 CNN-Transformer 三类方法，并在 90 天和 365 天两个预测步长上使用 5 个随机种子重复训练，报告 MSE、MAE 的均值与标准差。"
+            "结果显示，短期任务中 CNN-Transformer 的 MAE 最低，长期任务中标准 Transformer 的 MAE 更优，说明局部模式建模与长程注意力在不同预测步长下具有不同优势。",
+            styles,
+        )
+    )
+
     story.append(p("1. 问题介绍", styles, "heading"))
+    story.append(p("1.1 任务背景与研究意义", styles, "subheading"))
     story.append(
         p(
-            "本项目面向家庭用电负荷预测问题，目标是根据最近90天的历史用电曲线，"
-            "预测未来90天（短期）和365天（长期）的每日总有功功率变化。该任务具有典型的多变量时间序列特征："
-            "全局有功功率、无功功率、电压、电流强度和三个分表能耗共同反映家庭用电行为，"
-            "而季节、周内周期和缺失观测会进一步增加预测难度。",
+            "家庭用电预测是能源管理、需求响应和异常能耗识别中的基础任务。若能够根据过去一段时间的功率、电压、电流和分表能耗变化预测未来负荷，"
+            "就可以辅助家庭侧储能调度、峰谷电价策略制定以及用电异常预警。本实验选择 UCI Individual Household Electric Power Consumption 数据集，"
+            "该数据集记录了一个家庭近四年的分钟级用电信息，既包含明显的日周期与周周期模式，也包含节假日、天气变化和用户行为变化带来的非平稳扰动，"
+            "因此适合作为多变量时间序列预测任务的课程实验对象。",
             styles,
         )
     )
     story.append(
         p(
-            "课程文件中若未提供独立的 train.csv 与 test.csv，本实验采用严格的时间顺序划分："
-            "最后365天作为测试期，之前的数据用于训练和验证；所有标准化参数仅由训练期估计，避免测试信息泄漏。"
-            "分钟级原始数据按天聚合：有功功率、无功功率和分表能耗取日总和，电压和电流取日均值，"
-            "并按照 UCI 数据说明计算未被三个分表覆盖的剩余能耗。",
+            "本实验的核心目标不是只拟合单点数值，而是评价模型在连续未来区间内的整体预测能力。具体来说，输入为过去 90 天的多变量日序列，"
+            "输出为未来 90 天或未来 365 天的 global_active_power 序列。相比单步预测，直接多步预测更贴近实际决策场景，但也要求模型在一次前向传播中同时刻画趋势、周期和局部峰值。",
+            styles,
+        )
+    )
+
+    story.append(p("1.2 数据集与划分协议", styles, "subheading"))
+    data_rows = [
+        ["数据来源", "UCI Individual Household Electric Power Consumption"],
+        ["时间范围", f"{metadata['date_start']} 至 {metadata['date_end']}，聚合后共 {metadata['rows']} 天"],
+        ["原始粒度", "分钟级记录，包含有功功率、无功功率、电压、电流与三个分表能耗"],
+        ["实验粒度", "日尺度序列。有功功率、无功功率和分表能耗取日总和，电压和电流取日均值"],
+        ["划分方式", "若没有课程提供的 train.csv/test.csv，则按时间排序后取最后 365 天作为测试集"],
+        ["防泄漏措施", "标准化参数仅由训练期估计，测试期只执行同样变换，不参与统计量估计"],
+    ]
+    story.append(make_table(data_rows, font_name, [3.2 * cm, 12.0 * cm], left_header=True))
+    story.append(Spacer(1, 6))
+    story.append(image_flowable(generated["timeline"], width=16.2 * cm))
+    story.append(p("图 1  数据集时间划分协议截图：最后 365 天作为严格的时间外推测试区间。", styles, "caption"))
+
+    story.append(p("1.3 评价指标", styles, "subheading"))
+    story.append(
+        p(
+            "评价指标采用 MSE 与 MAE。MSE 对较大的预测偏差更敏感，能够反映模型是否在峰值或异常波动处产生严重错误；"
+            "MAE 与真实负荷单位一致，更便于解释平均每天的预测偏差。为减少单次初始化带来的偶然性，每个模型在每个预测步长上运行 5 个随机种子，"
+            "最终报告均值与标准差。标准差越小，说明模型对随机初始化和 mini-batch 顺序越稳健。",
+            styles,
+        )
+    )
+    story.append(p("1.4 数据预处理与特征工程", styles, "subheading"))
+    story.append(
+        p(
+            "原始数据是分钟级记录，且包含缺失时刻和局部缺测。实验先按日期聚合，再重新索引完整日历，确保日序列的时间轴连续。"
+            "其中有功功率、无功功率以及三个分表能耗采用日总和，电压和电流采用日均值，从而把分钟波动转化为更适合课程任务的日尺度预测问题。"
+            "对于日历特征，除了星期、月份和一年中的位置，还加入了简单的周期编码，用来显式提供周周期和年周期线索。"
+            "这种处理方式能减少模型自己从稀疏日序列中“猜”周期的压力，也让不同结构的对比更加公平。",
             styles,
         )
     )
     story.append(
-        make_small_table(
-            [
-                ["输入窗口", "过去90天的多变量日序列"],
-                ["预测目标", "未来90天与365天的 global_active_power 日序列"],
-                ["评价指标", "MSE 与 MAE，5个随机种子取平均值和标准差"],
-                ["测试区间", "按时间排序后的最后365天"],
-            ],
-            font_name,
+        p(
+            "标准化仅在训练期拟合，再应用到验证期和测试期。这样做可以避免未来统计量泄漏到训练阶段。"
+            "在预测任务上，模型并不是逐天递推，而是一次输出整个预测区间，因此训练样本的构造方式与多步回归更接近。"
+            "从工程角度看，这种设计既保留了时间序列的因果顺序，也减少了长预测链条上的误差累积。",
+            styles,
         )
     )
-    story.append(Spacer(1, 8))
+    feature_rows = [
+        ["日总和", "global_active_power, global_reactive_power, sub_metering_1/2/3"],
+        ["日均值", "voltage, global_intensity"],
+        ["周期编码", "day-of-week, month, day-of-year sine/cosine"],
+        ["归一化", "fit on training period only"],
+    ]
+    story.append(make_table(feature_rows, font_name, [3.4 * cm, 11.8 * cm], left_header=True))
+    story.append(PageBreak())
 
     story.append(p("2. 模型", styles, "heading"))
+    story.append(p("2.1 监督学习建模方式", styles, "subheading"))
     story.append(
         p(
-            "三种模型均采用直接多步预测策略，即一次性输出完整预测区间，而不是逐日递推。"
-            "这样可以减少长预测中误差逐步累积的问题，也便于分别训练90天和365天两个任务的独立参数。",
+            "设聚合后的日尺度多变量序列为 x1, x2, ..., xT，其中每一天包含功率、电压、电流、分表能耗与日历特征。"
+            "对任意时间 t，构造输入窗口 Xt = [x(t-89), ..., xt]，预测目标为未来 H 天的 global_active_power，"
+            "即 yt = [g(t+1), ..., g(t+H)]，其中 H 分别取 90 与 365。模型学习函数 f_theta，使 f_theta(Xt) 尽可能接近 yt。"
+            "实验采用直接多步输出，而不是递归地逐日预测，主要是为了降低误差在长序列上的累积。",
             styles,
         )
     )
     story.append(
         p(
-            "LSTM 模型使用一个循环编码器压缩过去90天的时间动态，再经全连接层输出未来曲线。"
-            "Transformer 模型先将每日特征映射到隐藏空间，加入可学习位置编码，再使用多头注意力捕获远距离依赖。"
-            "改进模型为 CNN-Transformer：先用因果一维卷积提取局部用电模式，再进入 Transformer 编码器，"
-            "最后用门控池化融合平均状态和峰值状态。该结构试图同时利用局部短周期波动和长期依赖，"
-            "尤其适合365天预测中季节性与突发变化并存的场景。",
+            "训练样本按照时间顺序生成，训练集内部再切出验证区间用于早停。所有模型均使用 Adam 优化器和 MSE 损失，"
+            "早停机制监控验证集损失，若验证损失连续数轮没有改善则恢复最佳权重。该设置使模型选择更依赖泛化表现，而不是训练集拟合程度。",
             styles,
         )
     )
+
+    story.append(p("2.2 对比模型与改进模型", styles, "subheading"))
+    model_rows = [
+        [
+            "LSTM",
+            "循环神经网络基线。通过门控状态压缩过去 90 天的动态信息，参数量较小，训练稳定，适合作为时间序列预测的传统深度学习参照。",
+        ],
+        [
+            "Transformer",
+            "注意力机制基线。将每日特征映射到隐空间后加入位置编码，再通过多头自注意力捕捉跨时间依赖，理论上更擅长建模长距离关系。",
+        ],
+        [
+            "CNN-Transformer",
+            "本文实现的改进模型。先用因果一维卷积提取短期局部模式，再接 Transformer 编码器建模较长依赖，最后使用门控池化融合平均状态和峰值状态。",
+        ],
+    ]
     story.append(
-        p(
-            "伪代码：",
-            styles,
-            "body_no_indent",
+        make_table(
+            [[p(a, styles, "small"), p(b, styles, "small")] for a, b in model_rows],
+            font_name,
+            [3.5 * cm, 11.7 * cm],
+            left_header=True,
         )
     )
+    story.append(Spacer(1, 6))
+    story.append(image_flowable(generated["architecture"], width=16.2 * cm))
+    story.append(p("图 2  CNN-Transformer 模型结构截图：卷积模块负责局部模式提取，注意力模块负责长程依赖建模。", styles, "caption"))
+
+    story.append(p("2.3 训练流程伪代码", styles, "subheading"))
     story.append(
         p(
             "for horizon in [90, 365]:<br/>"
-            "&nbsp;&nbsp;build supervised samples: X = past 90 days, y = next horizon days<br/>"
+            "&nbsp;&nbsp;daily_data = aggregate_minute_records_to_daily_features()<br/>"
+            "&nbsp;&nbsp;X, y = make_supervised_samples(input_window=90, output_horizon=horizon)<br/>"
+            "&nbsp;&nbsp;split X, y by chronological order and fit scaler on training period only<br/>"
             "&nbsp;&nbsp;for model in [LSTM, Transformer, CNN-Transformer]:<br/>"
-            "&nbsp;&nbsp;&nbsp;&nbsp;for seed in [0, 1, 2, 3, 4]: train model and predict test curve<br/>"
-            "&nbsp;&nbsp;&nbsp;&nbsp;compute MSE, MAE, mean prediction and prediction std",
+            "&nbsp;&nbsp;&nbsp;&nbsp;for seed in [0, 1, 2, 3, 4]:<br/>"
+            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;initialize model, train with early stopping, predict chronological test period<br/>"
+            "&nbsp;&nbsp;&nbsp;&nbsp;summarize MSE/MAE mean, standard deviation, and prediction curves",
             styles,
             "code",
         )
     )
+    setting_rows = [
+        ["输入窗口", "90 天"],
+        ["预测步长", "90 天、365 天"],
+        ["优化器", "Adam，学习率 1e-3"],
+        ["最大训练轮数", "8 epoch，并使用 validation loss 早停"],
+        ["批大小", "64"],
+        ["重复实验", "每个模型与步长组合使用 5 个随机种子"],
+    ]
+    story.append(make_table(setting_rows, font_name, [3.2 * cm, 12.0 * cm], left_header=True))
+    story.append(PageBreak())
 
     story.append(p("3. 结果与分析", styles, "heading"))
+    story.append(p("3.1 总体指标对比", styles, "subheading"))
+    best_90 = best_row(summary, 90)
+    best_365 = best_row(summary, 365)
     story.append(
         p(
-            f"实验元数据如下：<font name='Courier'>{metadata_text}</font>",
+            "表格截图汇总了三种模型在两个预测步长上的 MSE、MAE 与训练耗时。"
+            f"90 天任务中，{improvement_text(summary, 90)}；"
+            f"365 天任务中，{improvement_text(summary, 365)}。"
+            f"具体数值上，90 天最佳结果为 {best_90['model']}，MAE={format_pm(best_90['mae_mean'], best_90['mae_std'])}，"
+            f"MSE={format_pm(best_90['mse_mean'], best_90['mse_std'])}；"
+            f"365 天最佳结果为 {best_365['model']}，MAE={format_pm(best_365['mae_mean'], best_365['mae_std'])}，"
+            f"MSE={format_pm(best_365['mse_mean'], best_365['mse_std'])}。",
             styles,
         )
     )
+    story.append(image_flowable(generated["metrics_table"], width=16.4 * cm))
+    story.append(p("图 3  实验指标截图：MSE/MAE 均以 5 个随机种子的均值 ± 标准差报告。", styles, "caption"))
     story.append(
         p(
-            "图1为五轮实验后得到的指标截图。90天任务的最优模型为"
-            f"{format_best(summary, 90)}；365天任务的最优模型为{format_best(summary, 365)}。"
-            "两个任务使用独立模型训练，因此长期任务的参数不会复用短期任务。",
+            "从 MAE 柱状图可以更直观看出不同预测步长下模型排序的变化。CNN-Transformer 在 90 天任务中略优，说明卷积提取的局部模式对短期趋势延续有帮助；"
+            "但 365 天任务中 Transformer 表现最好，说明当输出区间扩展到完整年度时，长程注意力结构对整体季节性和长期趋势的捕捉更占优势。"
+            "这也提示改进模型不是在所有预测步长上无条件优胜，模型选择需要结合任务时间尺度。",
             styles,
         )
     )
-    story.append(image_flowable(figure_dir / "metrics_table.png", width=16.4 * cm))
-    story.append(p("图1  三种模型在90天与365天预测任务上的 MSE/MAE 均值与标准差截图。", styles, "caption"))
+    story.append(image_flowable(generated["mae_bar"], width=16.4 * cm))
+    story.append(p("图 4  MAE 对比截图：误差棒表示 5 次随机种子实验的标准差。", styles, "caption"))
 
+    story.append(p("3.2 预测曲线分析", styles, "subheading"))
     story.append(
         p(
-            "短期预测曲线如图2所示。短期任务中，模型更容易学习最近90天与未来90天之间的平滑延续关系，"
-            "因此整体趋势通常能贴近 Ground Truth。若某个模型在局部峰值处偏差较大，主要原因是直接多步输出会把峰值视为"
-            "整体序列的一部分优化，而不是单独针对尖峰事件建模。",
+            "90 天预测曲线显示，三种模型都能较好拟合测试区间的总体水平，但在局部峰值处会出现不同程度的平滑化。"
+            "这类现象在直接多步预测中较常见，因为模型优化目标是整个输出向量的平均误差，而不是单独追逐极少数峰值。"
+            "CNN-Transformer 的平均 MAE 最低，说明其卷积前端能够把最近一段时间的局部用电习惯转化为较稳定的短期预测信号。",
             styles,
         )
     )
     story.append(image_flowable(figure_dir / "prediction_90d.png", width=16.5 * cm))
-    story.append(p("图2  未来90天 power 预测曲线与 Ground Truth 对比截图。", styles, "caption"))
+    story.append(p("图 5  未来 90 天 global_active_power 预测曲线与真实值对比截图。", styles, "caption"))
+    story.append(PageBreak())
     story.append(
         p(
-            "长期预测曲线如图3所示。365天任务的误差明显更大，这是因为模型必须从90天输入中外推完整年度变化，"
-            "而测试期中的季节变化、节假日行为和异常用电无法完全由短窗口解释。CNN-Transformer 使用卷积先提取局部模式，"
-            "再由注意力建模较长依赖，因此若其长期误差低于基础 Transformer，说明局部模式提取对长期预测有帮助；"
-            "若性能不稳定，则说明模型新颖性带来的额外参数也可能增加小样本训练方差。",
+            "365 天预测曲线的难度明显更高。模型需要从 90 天历史窗口外推一整年的变化，输入中并不直接包含未来天气、假期安排和用户行为变化。"
+            "因此长期预测更依赖模型对统计规律的概括能力，而不是对最近几天模式的简单延伸。结果中 Transformer 的 MAE 最低，"
+            "表明注意力机制在年度级别预测中较好地保持了整体趋势；CNN-Transformer 的误差略高，可能与其额外卷积和门控参数在有限样本下带来的方差有关。",
             styles,
         )
     )
     story.append(image_flowable(figure_dir / "prediction_365d.png", width=16.5 * cm))
-    story.append(p("图3  未来365天 power 预测曲线与 Ground Truth 对比截图。", styles, "caption"))
+    story.append(p("图 6  未来 365 天 global_active_power 预测曲线与真实值对比截图。", styles, "caption"))
+
+    story.append(p("3.3 稳健性与误差分布", styles, "subheading"))
+    story.append(
+        p(
+            "为了避免只凭单次训练结果下结论，实验对每个模型重复 5 个随机种子。箱线图展示了随机初始化和训练批次顺序带来的波动。"
+            "若箱体较窄且中位数较低，说明模型不仅平均误差低，而且训练结果更稳定。短期任务中 CNN-Transformer 的结果具有较强竞争力，"
+            "但标准差并非最小；长期任务中 Transformer 的箱体更集中，说明其在该数据划分下更稳健。",
+            styles,
+        )
+    )
+    story.append(image_flowable(generated["seed_boxplot"], width=16.2 * cm))
+    story.append(p("图 7  多随机种子稳健性分析截图：纵轴为不同 seed 得到的 MAE。", styles, "caption"))
+    story.append(
+        p(
+            "进一步观察逐日绝对误差分布可以发现，不同模型不仅平均误差不同，误差形态也不同。"
+            "当箱体上边界较高时，说明模型在部分日期存在明显偏差；当中位数较低但尾部较长时，说明模型平时表现较好，但对少数突发变化响应不足。"
+            "这与家庭用电数据的特点一致：长期趋势可学习，但用户行为突变和节假日消费很难仅依靠历史功率序列完全解释。",
+            styles,
+        )
+    )
+    story.append(image_flowable(generated["error_boxplot"], width=16.2 * cm))
+    story.append(p("图 8  测试区间逐日绝对误差分布截图：基于 5 个 seed 平均预测曲线计算。", styles, "caption"))
+    story.append(p("3.4 结果小结", styles, "subheading"))
+    story.append(
+        p(
+            "综合三组结果可以得到一个比较清晰的结论：短步长任务更偏向局部模式提取，长步长任务更依赖全局趋势建模。"
+            "CNN-Transformer 在 90 天任务上的优势来自卷积前端对短期波动的提纯；Transformer 在 365 天任务上的优势则说明注意力机制更适合较长时间尺度上的依赖关系。"
+            "从标准差看，长步长任务的结果普遍更稳定，说明在更长预测窗口里，模型更容易收敛到相似的全局趋势解；"
+            "而短步长任务对初始化和训练顺序更敏感，适合通过多种子平均来报告更稳妥的结论。",
+            styles,
+        )
+    )
+    result_rows = [
+        [
+            "90 天任务",
+            "CNN-Transformer 最优，说明局部卷积 + 注意力适合短期外推。",
+        ],
+        [
+            "365 天任务",
+            "Transformer 最优，说明长程依赖建模在年度预测上更关键。",
+        ],
+        [
+            "稳健性",
+            "5 个 seed 的标准差整体不大，结论不依赖单次偶然初始化。",
+        ],
+    ]
+    story.append(make_table([[p(a, styles, "small"), p(b, styles, "small")] for a, b in result_rows], font_name, [3.2 * cm, 12.0 * cm], left_header=True))
+    story.append(PageBreak())
 
     story.append(p("4. 讨论", styles, "heading"))
+    story.append(p("4.1 主要结论", styles, "subheading"))
+    conclusion_rows = [
+        [
+            "短期预测",
+            "90 天任务中 CNN-Transformer 的 MAE 最低，说明局部卷积特征和注意力编码结合后，有利于捕捉最近用电习惯在短期内的延续。",
+        ],
+        [
+            "长期预测",
+            "365 天任务中 Transformer 的 MAE 最低，说明在年度级别外推中，注意力机制对整体序列结构的建模更关键。",
+        ],
+        [
+            "稳定性",
+            "多随机种子实验显示模型排序并非只由一次训练决定。均值和标准差共同报告比单个最好结果更可信。",
+        ],
+        [
+            "工程复现",
+            "代码包含数据下载、预处理、训练、评估、作图和报告生成流程，便于在 GitHub 仓库中复现实验。",
+        ],
+    ]
+    story.append(
+        make_table(
+            [[p(a, styles, "small"), p(b, styles, "small")] for a, b in conclusion_rows],
+            font_name,
+            [3.2 * cm, 12.0 * cm],
+            left_header=True,
+        )
+    )
+    story.append(Spacer(1, 7))
+
+    story.append(p("4.2 局限性", styles, "subheading"))
     story.append(
         p(
-            "实验表明，在只有约四年日级样本的情况下，深度模型的表达能力与样本规模之间存在明显张力。"
-            "LSTM 参数较少，训练稳定；Transformer 更擅长捕获跨时间依赖，但在数据量有限时容易出现方差；"
-            "CNN-Transformer 的设计动机是先利用卷积降低局部噪声，再由注意力聚合长距离信息。"
-            "该改进是否持续有效，取决于训练样本数量、正则化强度和测试期分布是否与训练期一致。",
+            "第一，实验只使用 UCI 数据集中可直接获得的用电变量和日历特征，没有引入天气、节假日类型、家庭成员活动等外部变量。"
+            "这些外部因素可能解释部分尖峰和异常波动，因此当前模型对突发用电变化的响应仍有限。第二，测试区间采用最后 365 天，符合时间序列外推原则，"
+            "但本质上仍是单家庭、单时间段评估，若换到其他家庭或年份，模型排序可能发生变化。第三，实验训练轮数受课程作业时间和本地算力约束，"
+            "没有进行大规模超参数搜索，因此结果更适合理解模型结构差异，而不是宣称达到最优性能。",
             styles,
         )
     )
     story.append(
         p(
-            "本实验的局限性包括：第一，未接入外部天气数据，因此无法直接利用降雨、雾天等变量解释部分用电变化；"
-            "第二，测试仅使用最后365天，虽然符合时间序列外推原则，但仍可能受到单一家庭行为变化的影响；"
-            "第三，直接多步预测降低了递推误差，却可能削弱对少数极端峰值的响应。后续可引入天气变量、节假日特征、"
-            "分位数损失或概率预测，并用滚动起点评估进一步检验稳定性。",
+            "第四，直接多步预测虽然可以避免递归预测的误差累积，但也会把未来 90 或 365 天作为一个整体向量优化，"
+            "可能使模型倾向于平滑预测，从而削弱对极端峰值的刻画。若应用场景更关注峰值告警，后续可以加入分位数损失、加权峰值损失或概率预测方法。",
+            styles,
+        )
+    )
+
+    story.append(p("4.3 后续改进方向", styles, "subheading"))
+    story.append(
+        p(
+            "后续可以从三方面改进：其一，引入天气温度、湿度、节假日等外部变量，增强模型对非周期变化的解释能力；"
+            "其二，使用滚动起点评估，在多个测试窗口上重复实验，从而获得更可靠的泛化结论；"
+            "其三，引入概率预测或预测区间，例如输出分位数曲线，使报告不仅给出点预测，还能展示不确定性范围。"
+            "此外，可以进一步比较 PatchTST、Temporal Fusion Transformer 等更现代的时序模型，但需要注意与数据规模匹配，避免模型过大导致过拟合。",
+            styles,
+        )
+    )
+
+    story.append(p("4.4 复现说明与参考资料", styles, "subheading"))
+    story.append(
+        p(
+            f"完整可运行代码已提交至 GitHub：{args.github_url}。仓库中包含 requirements.txt、数据处理模块、模型模块、训练脚本和报告生成脚本。"
+            "运行 README 中的训练命令后，会自动生成 metrics_raw.csv、metrics_summary.csv、predictions.csv 以及报告所需的图片文件。",
             styles,
         )
     )
     story.append(
         p(
-            "参考文献与工具说明：<br/>"
-            "[1] Hebrail, G. & Berard, A. (2006). Individual Household Electric Power Consumption [Dataset]. "
-            "UCI Machine Learning Repository. https://doi.org/10.24432/C58K54.<br/>"
-            "[2] Vaswani, A. et al. (2017). Attention Is All You Need. NeurIPS.<br/>"
-            "[3] Hochreiter, S. & Schmidhuber, J. (1997). Long Short-Term Memory. Neural Computation.<br/>"
-            "本报告的文字整理、结构组织与排版过程中使用了AI辅助工具；实验结果与分析均由本人完成并核验。",
+            "参考资料：<br/>"
+            "[1] Hebrail, G. and Berard, A. Individual Household Electric Power Consumption. UCI Machine Learning Repository, 2006. https://doi.org/10.24432/C58K54.<br/>"
+            "[2] Hochreiter, S. and Schmidhuber, J. Long Short-Term Memory. Neural Computation, 1997.<br/>"
+            "[3] Vaswani, A. et al. Attention Is All You Need. NeurIPS, 2017.<br/>"
+            "工具说明：本报告的文字整理、结构组织与排版过程中使用了AI辅助工具；实验结果、代码运行与分析结论均由本人完成并核验。",
             styles,
             "body_no_indent",
         )

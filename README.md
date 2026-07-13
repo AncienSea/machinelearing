@@ -53,3 +53,15 @@ python -m src.train --epochs 8 --seeds 0 1 2 3 4 --horizons 90 365 --batch-size 
 | 365 | CNN-Transformer | 193798.21 ± 7116.17 | 333.30 ± 9.82 |
 | 365 | LSTM | 187780.92 ± 3479.17 | 326.09 ± 4.98 |
 | 365 | Transformer | 179280.26 ± 4341.41 | 319.12 ± 2.92 |
+
+## Report Assets
+
+Running `scripts/build_report.py` generates a polished PDF and the report-specific visual assets below:
+
+- `artifacts/figures/report_metrics_table.png`
+- `artifacts/figures/report_mae_comparison.png`
+- `artifacts/figures/report_seed_robustness.png`
+- `artifacts/figures/report_error_distribution.png`
+- `artifacts/figures/report_data_timeline.png`
+- `artifacts/figures/report_architecture.png`
+
