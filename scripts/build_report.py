@@ -74,12 +74,15 @@ def parse_args() -> argparse.Namespace:
 
 
 def register_chinese_font() -> str:
-    candidates = [
-        Path(r"C:\Windows\Fonts\msyh.ttc"),
-        Path(r"C:\Windows\Fonts\simhei.ttf"),
+    simhei = Path(r"C:\Windows\Fonts\simhei.ttf")
+    if simhei.exists():
+        pdfmetrics.registerFont(TTFont("CNHei", str(simhei)))
+    body_candidates = [
         Path(r"C:\Windows\Fonts\simsun.ttc"),
+        Path(r"C:\Windows\Fonts\msyh.ttc"),
+        simhei,
     ]
-    for font_path in candidates:
+    for font_path in body_candidates:
         if font_path.exists():
             pdfmetrics.registerFont(TTFont("CNFont", str(font_path)))
             return "CNFont"
@@ -88,11 +91,12 @@ def register_chinese_font() -> str:
 
 def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
     base = getSampleStyleSheet()
+    title_font = "CNHei" if "CNHei" in pdfmetrics.getRegisteredFontNames() else font_name
     return {
         "title": ParagraphStyle(
             "ChineseTitle",
             parent=base["Title"],
-            fontName=font_name,
+            fontName=title_font,
             fontSize=21,
             leading=29,
             alignment=TA_CENTER,
@@ -113,7 +117,7 @@ def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
         "heading": ParagraphStyle(
             "ChineseHeading",
             parent=base["Heading1"],
-            fontName=font_name,
+            fontName=title_font,
             fontSize=15.5,
             leading=22,
             textColor=colors.HexColor("#17324d"),
@@ -124,7 +128,7 @@ def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
         "subheading": ParagraphStyle(
             "ChineseSubheading",
             parent=base["Heading2"],
-            fontName=font_name,
+            fontName=title_font,
             fontSize=12.2,
             leading=17,
             textColor=colors.HexColor("#244766"),
@@ -601,6 +605,38 @@ def build_report(args: argparse.Namespace) -> None:
         ["归一化", "fit on training period only"],
     ]
     story.append(make_table(feature_rows, font_name, [3.4 * cm, 11.8 * cm], left_header=True))
+    story.append(p("1.5 问题难点与实验假设", styles, "subheading"))
+    story.append(
+        p(
+            "该任务的难点主要体现在三方面。第一，家庭用电序列具有明显的多尺度特征：日内生活习惯会影响分钟级波动，"
+            "周末与工作日会形成周周期，季节变化又会影响年度趋势。将数据聚合到日尺度后，分钟级噪声被削弱，但峰值和异常日仍会保留。"
+            "第二，训练数据来自单个家庭，样本规模有限，深度模型容易在训练期记住局部模式而不是学习可外推规律。"
+            "第三，365 天预测属于较长距离外推，未来天气、节假日和家庭行为变化均不可见，因此模型只能依赖历史统计结构进行推断。",
+            styles,
+        )
+    )
+    story.append(
+        p(
+            "为使实验可复现，本报告采用两个约束假设：一是只使用数据集中可直接获得的变量，不额外爬取天气或节假日数据；"
+            "二是当课程链接没有提供固定训练集和测试集时，使用严格时间顺序划分，而不是随机划分。随机划分会让相邻时间片同时出现在训练集和测试集，"
+            "在时间序列预测中容易造成乐观估计；时间外推虽然更难，但更接近真实部署场景。",
+            styles,
+        )
+    )
+    difficulty_rows = [
+        ["多尺度周期", "日周期、周周期和季节趋势同时存在，模型需要兼顾局部波动与长期趋势。"],
+        ["样本量有限", "聚合后只有 1442 天记录，模型复杂度过高会增加过拟合风险。"],
+        ["长距离外推", "365 天任务无法观察未来外部因素，因此更考验模型的趋势概括能力。"],
+        ["评估可信度", "采用 5 个随机种子报告均值和标准差，避免只展示单次偶然结果。"],
+    ]
+    story.append(
+        make_table(
+            [[p(a, styles, "small"), p(b, styles, "small")] for a, b in difficulty_rows],
+            font_name,
+            [3.3 * cm, 11.9 * cm],
+            left_header=True,
+        )
+    )
     story.append(PageBreak())
 
     story.append(p("2. 模型", styles, "heading"))
@@ -673,6 +709,61 @@ def build_report(args: argparse.Namespace) -> None:
         ["重复实验", "每个模型与步长组合使用 5 个随机种子"],
     ]
     story.append(make_table(setting_rows, font_name, [3.2 * cm, 12.0 * cm], left_header=True))
+    story.append(p("2.4 模型结构的技术细节", styles, "subheading"))
+    story.append(
+        p(
+            "LSTM 将 90 天窗口按时间顺序输入循环单元，最后一个隐藏状态被视为历史窗口的压缩表示，再经过全连接层映射为未来 H 天预测。"
+            "这种模型的优点是结构简单、参数较少、对小样本较稳健；缺点是长距离依赖需要被压缩到固定维度状态中，"
+            "当预测 horizon 较长时，部分季节性信息可能被弱化。",
+            styles,
+        )
+    )
+    story.append(
+        p(
+            "Transformer 先将每日多变量特征投影到 d_model 维表示，并加入可学习位置编码，使模型能够区分不同时间位置。"
+            "多头自注意力通过 Query、Key、Value 的相似度计算不同日期之间的依赖关系，不需要像循环网络那样逐步传递状态。"
+            "因此它更适合捕捉跨较长时间跨度的关联，但在样本量较小时也更依赖正则化和早停。",
+            styles,
+        )
+    )
+    story.append(
+        p(
+            "CNN-Transformer 的设计思路是先局部、后全局。因果卷积只使用当前及过去的信息，能在不泄漏未来的前提下提取连续几天内的局部波动模式；"
+            "随后 Transformer 编码器再对卷积后的表示进行全局依赖建模。最后的门控池化同时保留平均状态和最大响应状态，"
+            "使模型既能关注整体用电水平，也能保留局部峰值信号。这一结构比单纯 Transformer 多了局部归纳偏置，理论上更适合短期预测。",
+            styles,
+        )
+    )
+    mechanism_rows = [
+        ["LSTM", "时间递归 + 最后隐藏状态；优点是稳健，缺点是长预测时信息压缩较强。"],
+        ["Transformer", "位置编码 + 多头自注意力；优点是长程依赖建模强，缺点是小样本下方差可能较大。"],
+        ["CNN-Transformer", "因果卷积 + 注意力 + 门控池化；优点是兼顾局部波动和全局趋势，结构解释性更强。"],
+    ]
+    story.append(
+        make_table(
+            [[p(a, styles, "small"), p(b, styles, "small")] for a, b in mechanism_rows],
+            font_name,
+            [3.3 * cm, 11.9 * cm],
+            left_header=True,
+        )
+    )
+    story.append(p("2.5 公平对比设置", styles, "subheading"))
+    story.append(
+        p(
+            "为了保证比较尽量公平，三种模型使用相同的输入特征、相同的训练/验证/测试划分、相同的优化器和相同的随机种子集合。"
+            "模型输出层均为 horizon 维向量，即 90 天任务输出 90 个连续预测值，365 天任务输出 365 个连续预测值。"
+            "实验没有针对某一个模型进行额外调参，也没有只报告最好 seed，而是把所有重复实验结果写入 metrics_raw.csv，再聚合为均值和标准差。",
+            styles,
+        )
+    )
+    story.append(
+        p(
+            "这种设置的意义在于：如果某个模型只在单个随机种子下表现优秀，但均值不稳定，就不能说明其真正优于其他模型；"
+            "如果一个模型在多个 seed 上都保持较低 MAE，说明它对初始化和训练样本顺序不敏感，更适合实际应用。"
+            "因此本报告的结论主要依据平均指标和误差分布，而不是某一次训练的偶然最低误差。",
+            styles,
+        )
+    )
     story.append(PageBreak())
 
     story.append(p("3. 结果与分析", styles, "heading"))
@@ -773,6 +864,39 @@ def build_report(args: argparse.Namespace) -> None:
         ],
     ]
     story.append(make_table([[p(a, styles, "small"), p(b, styles, "small")] for a, b in result_rows], font_name, [3.2 * cm, 12.0 * cm], left_header=True))
+    story.append(p("3.5 误差来源分析", styles, "subheading"))
+    story.append(
+        p(
+            "从预测曲线和误差分布看，模型误差主要来自三类情况。第一类是局部峰值日，即真实用电突然升高或降低，"
+            "但历史窗口中没有足够相似的先例，模型会倾向于输出更平滑的平均趋势。第二类是季节转折期，尤其在冬夏用电模式切换时，"
+            "历史窗口与未来窗口的统计分布发生变化，模型需要从有限历史中外推新的趋势。第三类是长预测 horizon 下的累积不确定性，"
+            "365 天任务虽然不是递归预测，但模型一次输出整年曲线，本质上仍需要同时预测大量未来状态，因此不确定性更高。",
+            styles,
+        )
+    )
+    story.append(
+        p(
+            "对比 MSE 与 MAE 也能看出误差形态差异。若某模型 MAE 接近其他模型但 MSE 偏高，说明它在大多数日期表现相近，"
+            "但在少数高误差日期上出现更严重偏差；若 MAE 与 MSE 同时较低，则说明模型对整体曲线和局部异常都更稳。"
+            "本实验中，90 天任务各模型差距较小，说明短期趋势相对容易学习；365 天任务中 Transformer 的 MAE 更低，"
+            "表明它在年度趋势上更有优势，但峰值日仍存在平滑化现象。",
+            styles,
+        )
+    )
+    error_rows = [
+        ["局部峰值", "用户行为突然变化，历史窗口中缺少可对照模式，模型容易预测偏平滑。"],
+        ["季节转折", "训练窗口与未来窗口分布差异增大，尤其影响长 horizon 预测。"],
+        ["外部变量缺失", "天气和节假日未显式输入，部分波动只能由历史功率间接推断。"],
+        ["模型容量", "模型过小会欠拟合复杂周期，模型过大又可能在单家庭样本上过拟合。"],
+    ]
+    story.append(
+        make_table(
+            [[p(a, styles, "small"), p(b, styles, "small")] for a, b in error_rows],
+            font_name,
+            [3.3 * cm, 11.9 * cm],
+            left_header=True,
+        )
+    )
     story.append(PageBreak())
 
     story.append(p("4. 讨论", styles, "heading"))
@@ -834,11 +958,45 @@ def build_report(args: argparse.Namespace) -> None:
         )
     )
 
-    story.append(p("4.4 复现说明与参考资料", styles, "subheading"))
+    story.append(p("4.4 与课程要求的对应关系", styles, "subheading"))
+    story.append(
+        p(
+            "本作业按照课程要求组织为四个主体部分：问题介绍、模型、结果与分析、讨论。问题介绍部分交代了数据来源、预测目标、训练测试划分和评价指标；"
+            "模型部分说明了 LSTM、Transformer 与 CNN-Transformer 的结构差异，并给出训练流程伪代码；"
+            "结果与分析部分包含指标表、预测曲线、随机种子稳健性和误差分布截图；讨论部分总结了主要结论、局限性和后续改进方向。"
+            "由于数据链接未提供固定 train/test 文件，实验采用最后 365 天作为测试期的时间顺序划分，符合时间序列预测的因果要求。",
+            styles,
+        )
+    )
+    requirement_rows = [
+        ["问题介绍", "包含任务背景、数据集、划分协议、评价指标、特征工程和任务难点。"],
+        ["模型", "包含 LSTM、Transformer、CNN-Transformer、训练伪代码和公平对比设置。"],
+        ["结果与分析", "包含指标截图、曲线截图、稳健性分析、误差分布和误差来源解释。"],
+        ["讨论", "包含主要结论、局限性、改进方向、复现说明与参考资料。"],
+        ["GitHub 链接", "PDF 首页和复现说明中均给出完整仓库地址。"],
+    ]
+    story.append(
+        make_table(
+            [[p(a, styles, "small"), p(b, styles, "small")] for a, b in requirement_rows],
+            font_name,
+            [3.3 * cm, 11.9 * cm],
+            left_header=True,
+        )
+    )
+
+    story.append(p("4.5 复现说明与参考资料", styles, "subheading"))
     story.append(
         p(
             f"完整可运行代码已提交至 GitHub：{args.github_url}。仓库中包含 requirements.txt、数据处理模块、模型模块、训练脚本和报告生成脚本。"
             "运行 README 中的训练命令后，会自动生成 metrics_raw.csv、metrics_summary.csv、predictions.csv 以及报告所需的图片文件。",
+            styles,
+        )
+    )
+    story.append(
+        p(
+            "复现实验时，建议先安装 requirements.txt 中的依赖，再执行训练命令。若本地已经存在课程数据文件，可以将数据放入 data 目录；"
+            "若不存在，程序会按代码中的数据源下载公开数据并完成预处理。训练完成后，报告脚本会读取 artifacts/metrics 下的实验记录，"
+            "重新生成所有表格截图和 PDF，因此 PDF 中的图表并非手工粘贴，而是由同一套实验产物自动生成。",
             styles,
         )
     )
