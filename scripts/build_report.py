@@ -17,7 +17,6 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     Image,
-    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -539,7 +538,7 @@ def build_report(args: argparse.Namespace) -> None:
         )
     )
 
-    story.append(p("1. 问题介绍", styles, "heading"))
+    story.append(p("1.问题介绍", styles, "heading"))
     story.append(
         p(
             "家庭用电预测是能源管理、需求响应和异常能耗识别中的基础任务。若能够根据过去一段时间的功率、电压、电流和分表能耗变化预测未来负荷，"
@@ -676,9 +675,7 @@ def build_report(args: argparse.Namespace) -> None:
             styles,
         )
     )
-    story.append(PageBreak())
-
-    story.append(p("2. 模型", styles, "heading"))
+    story.append(p("2.模型", styles, "heading"))
     story.append(
         p(
             "设聚合后的日尺度多变量序列为 x1, x2, ..., xT，其中每一天包含功率、电压、电流、分表能耗与日历特征。"
@@ -854,9 +851,7 @@ def build_report(args: argparse.Namespace) -> None:
             styles,
         )
     )
-    story.append(PageBreak())
-
-    story.append(p("3. 结果与分析", styles, "heading"))
+    story.append(p("3.结果与分析", styles, "heading"))
     best_90 = best_row(summary, 90)
     best_365 = best_row(summary, 365)
     story.append(
@@ -894,7 +889,6 @@ def build_report(args: argparse.Namespace) -> None:
     )
     story.append(image_flowable(figure_dir / "prediction_90d.png", width=16.5 * cm))
     story.append(p("图 5  未来 90 天 global_active_power 预测曲线与真实值对比截图。", styles, "caption"))
-    story.append(PageBreak())
     story.append(
         p(
             "365 天预测曲线的难度明显更高。模型需要从 90 天历史窗口外推一整年的变化，输入中并不直接包含未来天气、假期安排和用户行为变化。"
@@ -1051,9 +1045,7 @@ def build_report(args: argparse.Namespace) -> None:
             styles,
         )
     )
-    story.append(PageBreak())
-
-    story.append(p("4. 讨论", styles, "heading"))
+    story.append(p("4.讨论", styles, "heading"))
     conclusion_rows = [
         [
             "短期预测",
