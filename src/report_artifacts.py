@@ -153,7 +153,7 @@ def _draw_title(draw, width: int, title: str, subtitle: str | None = None) -> in
     subtitle_font = font(22)
     y = 34
     tw, th = text_size(draw, title, title_font)
-    draw.text(((width - tw) // 2, y), title, font=title_font, fill="#18334c")
+    draw.text(((width - tw) // 2, y), title, font=title_font, fill="#000000")
     y += th + 12
     if subtitle:
         sw, sh = text_size(draw, subtitle, subtitle_font)
@@ -188,7 +188,7 @@ def save_metrics_table(summary: pd.DataFrame, output_path: Path) -> Path:
         fill = "#E3EDF6"
         _draw_rounded_rect(draw, (x, top, x + col_widths[idx], top + row_h), fill, "#6C7A89", radius=12, width=2)
         bbox = TextBox(x + 12, top + 18, x + col_widths[idx] - 12, top + row_h - 12)
-        draw_wrapped_text(draw, bbox, h, f_head, fill="#18334c", align="center")
+        draw_wrapped_text(draw, bbox, h, f_head, fill="#000000", align="center")
         x += col_widths[idx] + 10
     y = top + row_h + 10
     for ridx, row in enumerate(rows):
@@ -255,8 +255,8 @@ def save_prediction_chart(predictions: pd.DataFrame, horizon: int, output_path: 
         tw, th = text_size(draw, label, axis_font)
         draw.text((x - tw // 2, bottom + 12), label, font=axis_font, fill="#475569")
 
-    draw.text((left, bottom + 52), "Date", font=label_font, fill="#1f2937")
-    draw.text((10, top + (bottom - top) // 2), "Daily global active power", font=label_font, fill="#1f2937")
+    draw.text((left, bottom + 52), "Date", font=label_font, fill="#000000")
+    draw.text((10, top + (bottom - top) // 2), "Daily global active power", font=label_font, fill="#000000")
 
     # Ground truth
     truth_points = [(x_for(i), y_for(v)) for i, v in enumerate(truth["ground_truth"].to_numpy())]
@@ -272,7 +272,7 @@ def save_prediction_chart(predictions: pd.DataFrame, horizon: int, output_path: 
     items = [("Ground Truth", "#111111")] + [(model, MODEL_COLORS[model]) for model in MODEL_ORDER]
     for name, color in items:
         draw.rectangle((legend_x, legend_y + 7, legend_x + 26, legend_y + 23), fill=color, outline=color)
-        draw.text((legend_x + 36, legend_y), name, font=legend_font, fill="#1f2937")
+        draw.text((legend_x + 36, legend_y), name, font=legend_font, fill="#000000")
         legend_y += 34
 
     return save_image(image, output_path)
@@ -321,15 +321,15 @@ def save_mae_comparison_chart(summary: pd.DataFrame, output_path: Path) -> Path:
             draw.line((cx - 10, err_bottom, cx + 10, err_bottom), fill="#1F2937", width=3)
         label = f"{horizon} days"
         tw, th = text_size(draw, label, label_font)
-        draw.text((center - tw / 2, bottom + 16), label, font=label_font, fill="#1f2937")
+        draw.text((center - tw / 2, bottom + 16), label, font=label_font, fill="#000000")
 
-    draw.text((left, bottom + 52), "Forecast horizon", font=label_font, fill="#1f2937")
-    draw.text((10, top + (bottom - top) // 2), "MAE (lower is better)", font=label_font, fill="#1f2937")
+    draw.text((left, bottom + 52), "Forecast horizon", font=label_font, fill="#000000")
+    draw.text((10, top + (bottom - top) // 2), "MAE (lower is better)", font=label_font, fill="#000000")
     legend_x = right - 420
     legend_y = top + 20
     for name, color in [(m, MODEL_COLORS[m]) for m in MODEL_ORDER]:
         draw.rectangle((legend_x, legend_y + 7, legend_x + 26, legend_y + 23), fill=color, outline=color)
-        draw.text((legend_x + 36, legend_y), name, font=legend_font, fill="#1f2937")
+        draw.text((legend_x + 36, legend_y), name, font=legend_font, fill="#000000")
         legend_y += 34
     return save_image(image, output_path)
 
@@ -391,10 +391,10 @@ def _save_boxplot(data_frame: pd.DataFrame, value_column: str, title: str, y_lab
             jitter = int((hash((float(v), label)) % 21) - 10)
             draw.ellipse((x_center + jitter - 3, y_for(float(v)) - 3, x_center + jitter + 3, y_for(float(v)) + 3), fill="#1F2937")
         tw, th = text_size(draw, label, label_font)
-        draw.text((x_center - tw / 2, bottom + 14), label, font=label_font, fill="#1f2937")
+        draw.text((x_center - tw / 2, bottom + 14), label, font=label_font, fill="#000000")
 
-    draw.text((left, bottom + 52), "Horizon and model", font=label_font, fill="#1f2937")
-    draw.text((12, top + (bottom - top) // 2), y_label, font=label_font, fill="#1f2937")
+    draw.text((left, bottom + 52), "Horizon and model", font=label_font, fill="#000000")
+    draw.text((12, top + (bottom - top) // 2), y_label, font=label_font, fill="#000000")
     return save_image(image, output_path)
 
 
@@ -445,8 +445,8 @@ def save_timeline(metadata: dict, predictions: pd.DataFrame, output_path: Path) 
         label = pd.to_datetime(date).strftime("%Y-%m-%d")
         tw, th = text_size(draw, label, axis_font)
         draw.text((x - tw / 2, y + 58), label, font=axis_font, fill="#475569")
-    draw.text((left, y - 78), "Training + validation period", font=label_font, fill="#18334c")
-    draw.text((x_test + 20, y - 78), "Test period", font=label_font, fill="#18334c")
+    draw.text((left, y - 78), "Training + validation period", font=label_font, fill="#000000")
+    draw.text((x_test + 20, y - 78), "Test period", font=label_font, fill="#000000")
     return save_image(image, output_path)
 
 
@@ -463,17 +463,16 @@ def save_architecture_diagram(output_path: Path) -> Path:
     for text, x, y, w, h, fill in boxes:
         _draw_rounded_rect(draw, (x, y, x + w, y + h), fill, "#6C7A89", radius=18, width=2)
         bbox = TextBox(x + 12, y + 16, x + w - 12, y + h - 12)
-        draw_wrapped_text(draw, bbox, text, font(24, bold=True), fill="#18334c", align="center")
+        draw_wrapped_text(draw, bbox, text, font(24, bold=True), fill="#000000", align="center")
     for i in range(len(boxes) - 1):
         x1 = boxes[i][1] + boxes[i][3]
         x2 = boxes[i + 1][1]
         y = boxes[i][2] + boxes[i][4] // 2
-        draw.line((x1 + 8, y, x2 - 8, y), fill="#18334c", width=4)
-        draw.polygon([(x2 - 8, y), (x2 - 26, y - 10), (x2 - 26, y + 10)], fill="#18334c")
+        draw.line((x1 + 8, y, x2 - 8, y), fill="#000000", width=4)
+        draw.polygon([(x2 - 8, y), (x2 - 26, y - 10), (x2 - 26, y + 10)], fill="#000000")
     note = (
         "The model first extracts short-term local patterns with causal convolutions, "
         "then models long-range dependence with self-attention, and finally fuses pooled representations for direct multi-step forecasting."
     )
     draw_wrapped_text(draw, TextBox(180, 350, 1580, 470), note, font(21), fill="#3B3B3B", align="center")
     return save_image(image, output_path)
-

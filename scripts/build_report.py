@@ -100,6 +100,7 @@ def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
             fontSize=21,
             leading=29,
             alignment=TA_CENTER,
+            textColor=colors.black,
             spaceAfter=10,
             wordWrap="CJK",
         ),
@@ -110,7 +111,7 @@ def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
             fontSize=10,
             leading=15,
             alignment=TA_CENTER,
-            textColor=colors.HexColor("#333333"),
+            textColor=colors.black,
             spaceAfter=16,
             wordWrap="CJK",
         ),
@@ -120,7 +121,7 @@ def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
             fontName=title_font,
             fontSize=15.5,
             leading=22,
-            textColor=colors.HexColor("#17324d"),
+            textColor=colors.black,
             spaceBefore=10,
             spaceAfter=8,
             wordWrap="CJK",
@@ -131,7 +132,7 @@ def make_styles(font_name: str) -> dict[str, ParagraphStyle]:
             fontName=title_font,
             fontSize=12.2,
             leading=17,
-            textColor=colors.HexColor("#244766"),
+            textColor=colors.black,
             spaceBefore=8,
             spaceAfter=5,
             wordWrap="CJK",
@@ -250,7 +251,7 @@ def make_table(
         style_commands.extend(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e5edf6")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#17324d")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
             ]
         )
     if left_header:
@@ -297,7 +298,7 @@ def create_metrics_table(summary: pd.DataFrame, figure_dir: Path) -> Path:
         cell.set_edgecolor("#465a69")
         if row == 0:
             cell.set_facecolor("#dfeaf3")
-            cell.set_text_props(weight="bold", color="#17324d")
+            cell.set_text_props(weight="bold", color="#000000")
         elif row % 2 == 0:
             cell.set_facecolor("#f5f7fa")
     fig.tight_layout()
@@ -401,8 +402,8 @@ def create_timeline(metadata: dict, predictions: pd.DataFrame, figure_dir: Path)
     ax.set_xlim(start, end)
     ax.axvspan(start, test_start, ymin=0.34, ymax=0.66, color="#4C78A8", alpha=0.75)
     ax.axvspan(test_start, end, ymin=0.34, ymax=0.66, color="#F58518", alpha=0.78)
-    ax.text(start, 0.72, "Training + validation period", fontsize=9, color="#17324d")
-    ax.text(test_start, 0.72, "Chronological test period", fontsize=9, color="#17324d")
+    ax.text(start, 0.72, "Training + validation period", fontsize=9, color="#000000")
+    ax.text(test_start, 0.72, "Chronological test period", fontsize=9, color="#000000")
     ax.text(start, 0.23, start.strftime("%Y-%m-%d"), fontsize=8)
     ax.text(test_start, 0.23, test_start.strftime("%Y-%m-%d"), fontsize=8, ha="center")
     ax.text(end, 0.23, end.strftime("%Y-%m-%d"), fontsize=8, ha="right")
@@ -433,7 +434,7 @@ def create_architecture_diagram(figure_dir: Path) -> Path:
             0.14,
             0.34,
             linewidth=1.3,
-            edgecolor="#17324d",
+            edgecolor="#000000",
             facecolor="#e8f1f6",
             transform=ax.transAxes,
         )
@@ -447,7 +448,7 @@ def create_architecture_diagram(figure_dir: Path) -> Path:
             xy=(x1, 0.51),
             xytext=(x0, 0.51),
             xycoords=ax.transAxes,
-            arrowprops=dict(arrowstyle="->", color="#17324d", lw=1.4),
+            arrowprops=dict(arrowstyle="->", color="#000000", lw=1.4),
         )
     ax.text(
         0.5,
