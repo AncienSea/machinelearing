@@ -540,7 +540,6 @@ def build_report(args: argparse.Namespace) -> None:
     )
 
     story.append(p("1. 问题介绍", styles, "heading"))
-    story.append(p("1.1 任务背景与研究意义", styles, "subheading"))
     story.append(
         p(
             "家庭用电预测是能源管理、需求响应和异常能耗识别中的基础任务。若能够根据过去一段时间的功率、电压、电流和分表能耗变化预测未来负荷，"
@@ -558,7 +557,6 @@ def build_report(args: argparse.Namespace) -> None:
         )
     )
 
-    story.append(p("1.2 数据集与划分协议", styles, "subheading"))
     data_rows = [
         ["数据来源", "UCI Individual Household Electric Power Consumption"],
         ["时间范围", f"{metadata['date_start']} 至 {metadata['date_end']}，聚合后共 {metadata['rows']} 天"],
@@ -572,7 +570,6 @@ def build_report(args: argparse.Namespace) -> None:
     story.append(image_flowable(generated["timeline"], width=16.2 * cm))
     story.append(p("图 1  数据集时间划分协议截图：最后 365 天作为严格的时间外推测试区间。", styles, "caption"))
 
-    story.append(p("1.3 评价指标", styles, "subheading"))
     story.append(
         p(
             "评价指标采用 MSE 与 MAE。MSE 对较大的预测偏差更敏感，能够反映模型是否在峰值或异常波动处产生严重错误；"
@@ -581,7 +578,6 @@ def build_report(args: argparse.Namespace) -> None:
             styles,
         )
     )
-    story.append(p("1.4 数据预处理与特征工程", styles, "subheading"))
     story.append(
         p(
             "原始数据是分钟级记录，且包含缺失时刻和局部缺测。实验先按日期聚合，再重新索引完整日历，确保日序列的时间轴连续。"
@@ -606,7 +602,6 @@ def build_report(args: argparse.Namespace) -> None:
         ["归一化", "fit on training period only"],
     ]
     story.append(make_table(feature_rows, font_name, [3.4 * cm, 11.8 * cm], left_header=True))
-    story.append(p("1.5 问题难点与实验假设", styles, "subheading"))
     story.append(
         p(
             "该任务的难点主要体现在三方面。第一，家庭用电序列具有明显的多尺度特征：日内生活习惯会影响分钟级波动，"
@@ -638,7 +633,6 @@ def build_report(args: argparse.Namespace) -> None:
             left_header=True,
         )
     )
-    story.append(p("1.6 变量含义与预测目标定义", styles, "subheading"))
     story.append(
         p(
             "为了让预测任务定义更加明确，本实验将原始字段分为目标变量、辅助负荷变量、电气状态变量和日历变量四类。"
@@ -685,7 +679,6 @@ def build_report(args: argparse.Namespace) -> None:
     story.append(PageBreak())
 
     story.append(p("2. 模型", styles, "heading"))
-    story.append(p("2.1 监督学习建模方式", styles, "subheading"))
     story.append(
         p(
             "设聚合后的日尺度多变量序列为 x1, x2, ..., xT，其中每一天包含功率、电压、电流、分表能耗与日历特征。"
@@ -703,7 +696,6 @@ def build_report(args: argparse.Namespace) -> None:
         )
     )
 
-    story.append(p("2.2 对比模型与改进模型", styles, "subheading"))
     model_rows = [
         [
             "LSTM",
@@ -730,7 +722,6 @@ def build_report(args: argparse.Namespace) -> None:
     story.append(image_flowable(generated["architecture"], width=16.2 * cm))
     story.append(p("图 2  CNN-Transformer 模型结构截图：卷积模块负责局部模式提取，注意力模块负责长程依赖建模。", styles, "caption"))
 
-    story.append(p("2.3 训练流程伪代码", styles, "subheading"))
     story.append(
         p(
             "for horizon in [90, 365]:<br/>"
@@ -754,7 +745,6 @@ def build_report(args: argparse.Namespace) -> None:
         ["重复实验", "每个模型与步长组合使用 5 个随机种子"],
     ]
     story.append(make_table(setting_rows, font_name, [3.2 * cm, 12.0 * cm], left_header=True))
-    story.append(p("2.4 模型结构的技术细节", styles, "subheading"))
     story.append(
         p(
             "LSTM 将 90 天窗口按时间顺序输入循环单元，最后一个隐藏状态被视为历史窗口的压缩表示，再经过全连接层映射为未来 H 天预测。"
@@ -792,7 +782,6 @@ def build_report(args: argparse.Namespace) -> None:
             left_header=True,
         )
     )
-    story.append(p("2.5 公平对比设置", styles, "subheading"))
     story.append(
         p(
             "为了保证比较尽量公平，三种模型使用相同的输入特征、相同的训练/验证/测试划分、相同的优化器和相同的随机种子集合。"
@@ -809,7 +798,6 @@ def build_report(args: argparse.Namespace) -> None:
             styles,
         )
     )
-    story.append(p("2.6 损失函数、反归一化与评价流程", styles, "subheading"))
     story.append(
         p(
             "模型训练阶段采用均方误差作为损失函数。设真实未来序列为 y=[y1,...,yH]，模型输出为 y_hat=[y_hat1,...,y_hatH]，"
@@ -850,7 +838,6 @@ def build_report(args: argparse.Namespace) -> None:
             left_header=True,
         )
     )
-    story.append(p("2.7 模型复杂度与课程实现取舍", styles, "subheading"))
     story.append(
         p(
             "本实验没有使用特别庞大的网络结构，而是把隐藏维度控制在较小规模，主要原因是数据集聚合后只有 1442 天记录。"
@@ -870,7 +857,6 @@ def build_report(args: argparse.Namespace) -> None:
     story.append(PageBreak())
 
     story.append(p("3. 结果与分析", styles, "heading"))
-    story.append(p("3.1 总体指标对比", styles, "subheading"))
     best_90 = best_row(summary, 90)
     best_365 = best_row(summary, 365)
     story.append(
@@ -898,7 +884,6 @@ def build_report(args: argparse.Namespace) -> None:
     story.append(image_flowable(generated["mae_bar"], width=16.4 * cm))
     story.append(p("图 4  MAE 对比截图：误差棒表示 5 次随机种子实验的标准差。", styles, "caption"))
 
-    story.append(p("3.2 预测曲线分析", styles, "subheading"))
     story.append(
         p(
             "90 天预测曲线显示，三种模型都能较好拟合测试区间的总体水平，但在局部峰值处会出现不同程度的平滑化。"
@@ -921,7 +906,6 @@ def build_report(args: argparse.Namespace) -> None:
     story.append(image_flowable(figure_dir / "prediction_365d.png", width=16.5 * cm))
     story.append(p("图 6  未来 365 天 global_active_power 预测曲线与真实值对比截图。", styles, "caption"))
 
-    story.append(p("3.3 稳健性与误差分布", styles, "subheading"))
     story.append(
         p(
             "为了避免只凭单次训练结果下结论，实验对每个模型重复 5 个随机种子。箱线图展示了随机初始化和训练批次顺序带来的波动。"
@@ -942,7 +926,6 @@ def build_report(args: argparse.Namespace) -> None:
     )
     story.append(image_flowable(generated["error_boxplot"], width=16.2 * cm))
     story.append(p("图 8  测试区间逐日绝对误差分布截图：基于 5 个 seed 平均预测曲线计算。", styles, "caption"))
-    story.append(p("3.4 结果小结", styles, "subheading"))
     story.append(
         p(
             "综合三组结果可以得到一个比较清晰的结论：短步长任务更偏向局部模式提取，长步长任务更依赖全局趋势建模。"
@@ -967,7 +950,6 @@ def build_report(args: argparse.Namespace) -> None:
         ],
     ]
     story.append(make_table([[p(a, styles, "small"), p(b, styles, "small")] for a, b in result_rows], font_name, [3.2 * cm, 12.0 * cm], left_header=True))
-    story.append(p("3.5 误差来源分析", styles, "subheading"))
     story.append(
         p(
             "从预测曲线和误差分布看，模型误差主要来自三类情况。第一类是局部峰值日，即真实用电突然升高或降低，"
@@ -1000,7 +982,6 @@ def build_report(args: argparse.Namespace) -> None:
             left_header=True,
         )
     )
-    story.append(p("3.6 90 天预测结果的具体解释", styles, "subheading"))
     story.append(
         p(
             "90 天任务属于相对短期的多步预测，未来区间与输入窗口在时间上相邻，因此最近 90 天的用电状态对预测有较强参考价值。"
@@ -1028,7 +1009,6 @@ def build_report(args: argparse.Namespace) -> None:
             styles,
         )
     )
-    story.append(p("3.7 365 天预测结果的具体解释", styles, "subheading"))
     story.append(
         p(
             "365 天任务明显更接近长期趋势预测。输入窗口只有 90 天，而输出长度达到 365 天，这意味着模型需要从一个季度左右的历史信息外推完整一年。"
@@ -1055,7 +1035,6 @@ def build_report(args: argparse.Namespace) -> None:
             styles,
         )
     )
-    story.append(p("3.8 实验可信度说明", styles, "subheading"))
     story.append(
         p(
             "为了提高结论可信度，本实验保留了 metrics_raw.csv 中每一次训练的原始结果，而不是只保存最终均值。"
@@ -1075,7 +1054,6 @@ def build_report(args: argparse.Namespace) -> None:
     story.append(PageBreak())
 
     story.append(p("4. 讨论", styles, "heading"))
-    story.append(p("4.1 主要结论", styles, "subheading"))
     conclusion_rows = [
         [
             "短期预测",
@@ -1104,7 +1082,6 @@ def build_report(args: argparse.Namespace) -> None:
     )
     story.append(Spacer(1, 7))
 
-    story.append(p("4.2 局限性", styles, "subheading"))
     story.append(
         p(
             "第一，实验只使用 UCI 数据集中可直接获得的用电变量和日历特征，没有引入天气、节假日类型、家庭成员活动等外部变量。"
@@ -1122,7 +1099,6 @@ def build_report(args: argparse.Namespace) -> None:
         )
     )
 
-    story.append(p("4.3 后续改进方向", styles, "subheading"))
     story.append(
         p(
             "后续可以从三方面改进：其一，引入天气温度、湿度、节假日等外部变量，增强模型对非周期变化的解释能力；"
@@ -1133,7 +1109,6 @@ def build_report(args: argparse.Namespace) -> None:
         )
     )
 
-    story.append(p("4.4 与课程要求的对应关系", styles, "subheading"))
     story.append(
         p(
             "本作业按照课程要求组织为四个主体部分：问题介绍、模型、结果与分析、讨论。问题介绍部分交代了数据来源、预测目标、训练测试划分和评价指标；"
@@ -1159,7 +1134,6 @@ def build_report(args: argparse.Namespace) -> None:
         )
     )
 
-    story.append(p("4.5 实际应用价值与实验反思", styles, "subheading"))
     story.append(
         p(
             "从实际应用角度看，家庭负荷预测并不只关心某一天的精确数值，更关心未来一段时间的整体用电水平、趋势变化和异常风险。"
@@ -1202,7 +1176,6 @@ def build_report(args: argparse.Namespace) -> None:
         )
     )
 
-    story.append(p("4.6 复现说明与参考资料", styles, "subheading"))
     story.append(
         p(
             f"完整可运行代码已提交至 GitHub：{args.github_url}。仓库中包含 requirements.txt、数据处理模块、模型模块、训练脚本和报告生成脚本。"
